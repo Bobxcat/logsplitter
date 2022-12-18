@@ -12,6 +12,7 @@ use flate2::{read::GzEncoder, Compression};
 use tokio::{
     fs::File,
     io::{AsyncWrite, AsyncWriteExt},
+    runtime::Handle,
     sync::{mpsc, Mutex},
     task::{block_in_place, spawn_blocking},
 };
@@ -47,11 +48,16 @@ use tokio::{
 #[derive(Debug)]
 pub struct GzEncoderAsync {
     enc: GzEncoder<VecDeque<u8>>,
+    /// The number of bytes queued for writing to the file output. Resets upon calling `flush` along with
+    /// and resetting `enc` to a new decoder
+    bytes_queued: usize,
+    compression_level: u32,
     f: File,
 }
 
 impl GzEncoderAsync {
-    pub async fn new<P>(path: P) -> Self
+    const MAX_BYTES_QUEUED: usize = 1024 * 1024 * 5;
+    pub async fn new<P>(path: P, compression_level: u32) -> Self
     where
         P: AsRef<Path>,
     {
@@ -61,53 +67,51 @@ impl GzEncoderAsync {
         //     queue: Arc::new(Mutex::new(VecDeque::new())),
         // };
 
-        let enc = GzEncoder::new(VecDeque::new(), Compression::new(5));
-        Self { enc, f }
+        let enc = GzEncoder::new(VecDeque::new(), Compression::new(compression_level));
+        Self {
+            enc,
+            f,
+            bytes_queued: 0,
+            compression_level,
+        }
+    }
+    pub async fn flush(&mut self) {
+        //Flush the output to the file
+        let mut buf = Vec::with_capacity(self.bytes_queued);
+        self.enc.read_to_end(&mut buf).unwrap();
+        //Write the file contents asyncrounously
+        self.f.write_all(&buf).await.unwrap();
+
+        //Reset values, keeping the same file open
+        self.bytes_queued = 0;
+        self.enc = GzEncoder::new(VecDeque::new(), Compression::new(self.compression_level))
     }
     /// Encodes `buf` into Gzip and appends the encoded bytes to the file
     pub async fn write(&mut self, buf: &[u8]) -> std::io::Result<()> {
-        let buf = block_in_place(|| -> Result<Vec<u8>, std::io::Error> {
-            //First, push the buffer to the encoding queue
-            self.enc.write(buf)?;
+        //Update the number of bytes queued
+        self.bytes_queued += buf.len();
 
-            println!("Encoding Buf:\n    {buf:?}");
-            let mut buf = Vec::new();
+        //Push the buffer to the encoding queue
+        self.enc.write_all(buf)?;
 
-            //Second, read the encoded output into a buffer
-            loop {
-                let tmp_buf = &mut [0; 32][..];
-                match self.enc.read(tmp_buf) {
-                    //Add all read bytes to `buf`, but if 0 were read then break the loop
-                    Ok(bytes_read) => {
-                        dbg!(bytes_read);
-                        if bytes_read == 0 {
-                            break;
-                        }
-                        for i in 0..bytes_read {
-                            buf.push(tmp_buf[i]);
-                        }
-                    }
-                    //If an error was encountered, ignore iff it's of kind `Interrupted`
-                    Err(e) => match e.kind() {
-                        std::io::ErrorKind::Interrupted => continue,
-                        _ => return Err(e),
-                    },
-                }
-            }
-            println!("    {buf:?}");
-
-            Ok(buf)
-        })?;
-
-        //Finally, write the encoded output into the file asyncronously
-        self.f.write_all_buf(&mut Bytes::from(buf)).await?;
+        if self.bytes_queued > Self::MAX_BYTES_QUEUED {
+            self.flush();
+        }
 
         Ok(())
     }
-    pub async fn flush(&mut self) {
-        //
-    }
     pub async fn finish(self) {
         //
+    }
+}
+
+impl Drop for GzEncoderAsync {
+    fn drop(&mut self) {
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                let runtime = tokio::runtime::Builder::new_multi_thread().build().unwrap();
+                runtime.block_on(self.flush());
+            });
+        });
     }
 }

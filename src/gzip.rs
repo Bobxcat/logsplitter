@@ -102,10 +102,10 @@ impl JsonLinesWriteStream {
         P: AsRef<Path>,
     {
         let path: &Path = path.as_ref();
-        println!("new JsonLinesWriteStream: {path:?}");
+        // println!("new JsonLinesWriteStream: {path:?}");
 
         Self {
-            encode_stream: GzEncoderAsync::new(path).await,
+            encode_stream: GzEncoderAsync::new(path, 5).await,
         }
     }
     pub async fn write_bytes(&mut self, buf: &[u8]) {
