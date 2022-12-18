@@ -1,0 +1,40 @@
+{
+    "message": "Here is a message",
+    "@timestamp": "2022-12-17T11:56:01.413952466-06:00",
+    "level": "debug",
+    "@meta": {
+        "service": "foo",
+        "env": "dev",
+        "user": "donovan"
+    }
+}
+{
+    "message": "Another message",
+    "level": "info",
+    "@timestamp": "2022-12-17T17:57:08.129711647+00:00",
+    "@meta": {
+        "service": "foo",
+        "env": "stg",
+        "user": "alice"
+    }
+}
+{
+    "message": "Another another",
+    "level": "info",
+    "@timestamp": "2022-12-17T17:57:09Z",
+    "@meta": {
+        "service": "foo",
+        "env": "stg",
+        "user": "alice"
+    }
+}
+{
+    "message": "Hello friends",
+    "level": "debug",
+    "@timestamp": "2022-12-17T17:57:10Z",
+    "@meta": {
+        "service": "bar",
+        "env": "stg",
+        "user": "donovan"
+    }
+}
