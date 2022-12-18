@@ -138,6 +138,7 @@ async fn process_lines(
             },
         }
 
+        //Process each line
         let mut process_line_queue = process_line_queue.lock().await;
 
         if let Some(line) = process_line_queue.pop_back() {
@@ -154,6 +155,7 @@ async fn process_lines(
             //Queue the line
             let mut output_line_queue = output_line_queue.lock().await;
             output_line_queue.push_front(line);
+            println!("Queue state: {:#?}", output_line_queue);
         }
     }
 
@@ -181,20 +183,22 @@ async fn output_lines(
         }
         let mut queue = output_line_queue.lock().await;
         if let Some(line) = queue.pop_back() {
+            println!("Processing line: {:#?}", line);
             let mut s = output_file_streams.lock().await;
 
-            s.write(&line.target_file, Bytes::from(line.text)).await;
+            s.write_line(line).await;
         }
     }
 
     Ok(())
 }
 
+/// Represents a decoded JSON line
 #[derive(Debug)]
-struct Line {
+pub struct Line {
     /// Relative path of the target file
-    target_file: PathBuf,
-    text: String,
+    pub target_file: PathBuf,
+    pub text: String,
 }
 
 #[tokio::main]
@@ -204,6 +208,7 @@ async fn main() -> anyhow::Result<()> {
 
     let (task_send, _task_recv) = channel(128);
 
+    // let mut line_stream = open_file("example_sets/testdata.json.gz").await?;
     let mut line_stream = open_file("example_sets/input1.json.gz").await?;
 
     // The queue of lines to be processed by `process_lines` tasks

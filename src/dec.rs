@@ -23,7 +23,7 @@ impl GzDecoderAsync {
         P: AsRef<Path>,
     {
         let f = File::open(path).await.unwrap();
-        let dec = GzipDecoder::new(BufReader::new(f));
+        let dec = GzipDecoder::new(BufReader::with_capacity(1024 * 1024, f));
         Self { dec }
     }
 }

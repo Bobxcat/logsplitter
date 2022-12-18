@@ -24,7 +24,7 @@ use tokio::{
 use tokio_stream::{wrappers::UnboundedReceiverStream, StreamExt};
 use tokio_util::io::StreamReader;
 
-use crate::{dec::GzDecoderAsync, enc::GzEncoderAsync};
+use crate::{dec::GzDecoderAsync, enc::GzEncoderAsync, Line};
 // use tokio_stream::wrappers::ReceiverStream;
 
 #[derive(Debug)]
@@ -75,6 +75,14 @@ impl JsonLinesWriteStreamPool {
         self.get_or_insert(path).await.write_bytes(&bytes).await;
     }
 
+    pub async fn write_line(&mut self, line: Line) {
+        let Line {
+            target_file: path,
+            text,
+        } = line;
+        self.get_or_insert(&path).await.write_line(text).await;
+    }
+
     pub async fn finish_all(self) {
         for (_path, s) in self.pool {
             s.finish().await;
@@ -99,35 +107,14 @@ impl JsonLinesWriteStream {
         Self {
             encode_stream: GzEncoderAsync::new(path).await,
         }
-
-        // let path: &Path = path.as_ref();
-        // println!("new JsonLinesWriteStream: {path:?}");
-
-        // let f = tokio::fs::File::create(path).await.unwrap();
-
-        // let f = f.into_std().await;
-        // // let f = File::create(path).await.unwrap();
-
-        // // let (send, recv) = unbounded_channel();
-
-        // // let recv = UnboundedReceiverStream::new(recv);
-        // // let encode_stream = {
-        // //     let encode_stream = StreamReader::new(recv);
-        // //     GzipEncoder::new(BufReader::new(encode_stream))
-        // // };
-
-        // // Self {
-        // //     input_stream: send,
-        // //     encode_stream,
-        // //     output_file: f,
-        // // }
-        // Self {
-        //     encode_stream: GzEncoder::new(f, Compression::new(5)),
-        // }
     }
     pub async fn write_bytes(&mut self, buf: &[u8]) {
         self.encode_stream.write(buf).await.unwrap();
         // self.encode_stream.write_all(buf);
+    }
+    pub async fn write_line(&mut self, mut line: String) {
+        line.push('\n');
+        self.write_bytes(line.as_bytes()).await;
     }
     pub async fn flush(&mut self) {
         self.encode_stream.flush().await;
