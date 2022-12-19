@@ -201,6 +201,7 @@ pub struct Line {
 //Custom thread pools
 //  some (4-5) threads deticated to the async runtime which should be mostly IO operations
 //  most (the rest) of the threads should be running Gzip decompression/compression
+//  so, what this means is the
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 20)]
 async fn main() -> anyhow::Result<()> {

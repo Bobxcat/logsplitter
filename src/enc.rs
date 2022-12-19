@@ -4,6 +4,7 @@ use std::{
     path::Path,
     rc::Rc,
     sync::Arc,
+    thread::{scope, ScopedJoinHandle},
 };
 
 use bytes::Bytes;
@@ -56,6 +57,7 @@ pub struct GzEncoderAsync {
 }
 
 impl GzEncoderAsync {
+    // The number of bytes (uncompressed) which can be written to each GzEncoder before resetting
     const MAX_BYTES_QUEUED: usize = 1024 * 1024 * 5;
     pub async fn new<P>(path: P, compression_level: u32) -> Self
     where
@@ -90,10 +92,16 @@ impl GzEncoderAsync {
     pub async fn write(&mut self, buf: &[u8]) -> std::io::Result<()> {
         //Update the number of bytes queued
         self.bytes_queued += buf.len();
+        // scope(|sc| -> Vec<ScopedJoinHandle<std::io::Result<()>>> {
+        //     sc.spawn(|| -> std::io::Result<()> {
+        //     });
+        //     vec![]
+        // });
 
         //Push the buffer to the encoding queue
         self.enc.write_all(buf)?;
 
+        //Flush the bytes
         if self.bytes_queued > Self::MAX_BYTES_QUEUED {
             self.flush().await;
         }
