@@ -95,13 +95,10 @@ impl GzEncoderAsync {
         self.enc.write_all(buf)?;
 
         if self.bytes_queued > Self::MAX_BYTES_QUEUED {
-            self.flush();
+            self.flush().await;
         }
 
         Ok(())
-    }
-    pub async fn finish(self) {
-        //
     }
 }
 

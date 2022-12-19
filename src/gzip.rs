@@ -102,7 +102,6 @@ impl JsonLinesWriteStream {
         P: AsRef<Path>,
     {
         let path: &Path = path.as_ref();
-        // println!("new JsonLinesWriteStream: {path:?}");
 
         Self {
             encode_stream: GzEncoderAsync::new(path, 5).await,
@@ -110,7 +109,6 @@ impl JsonLinesWriteStream {
     }
     pub async fn write_bytes(&mut self, buf: &[u8]) {
         self.encode_stream.write(buf).await.unwrap();
-        // self.encode_stream.write_all(buf);
     }
     pub async fn write_line(&mut self, mut line: String) {
         line.push('\n');
@@ -118,38 +116,11 @@ impl JsonLinesWriteStream {
     }
     pub async fn flush(&mut self) {
         self.encode_stream.flush().await;
-        // self.encode_stream.flush();
     }
     pub async fn finish(self) {
-        self.encode_stream.finish().await;
-        // self.encode_stream.finish();
+        // self.encode_stream.finish().await;
+        todo!()
     }
-    // pub async fn queue_bytes(&self, bytes: Bytes) {
-    //     self.input_stream.send(Ok(bytes)).unwrap();
-    // }
-    // pub async fn flush_bytes_to_file(&mut self) {
-    //     //Mark the end of the file
-    //     self.input_stream
-    //         .send(Err(std::io::ErrorKind::UnexpectedEof.into()))
-    //         .unwrap();
-
-    //     let mut buf = Vec::new();
-
-    //     loop {
-    //         let b = self.encode_stream.read_u8().await;
-    //         println!("{b:?}");
-    //         match b {
-    //             Ok(v) => buf.push(v),
-    //             Err(e) => match e.kind() {
-    //                 std::io::ErrorKind::UnexpectedEof => break,
-    //                 _ => todo!(),
-    //             },
-    //         }
-    //     }
-
-    //     println!("buf: {buf:?}");
-    //     self.output_file.write_all(&buf).await.unwrap();
-    // }
 }
 
 #[derive(Debug)]
@@ -169,7 +140,6 @@ impl JsonLinesReadStream {
     /// Gets the next JSON line (which contains a whole object)
     pub async fn next_line(&mut self) -> Result<String, tokio::io::Error> {
         let mut line = String::new();
-        // self.input_stream.
         loop {
             let c = match self.input_stream.read_u8().await {
                 Ok(c) => c,
@@ -186,22 +156,6 @@ impl JsonLinesReadStream {
             }
 
             line.push(c);
-
-            // let c = match self.input_stream.read_u8().await {
-            //     Ok(c) => c,
-            //     Err(e) => match e.kind() {
-            //         std::io::ErrorKind::UnexpectedEof => {
-            //             println!("EOF reached");
-            //             return Ok(String::new());
-            //         }
-            //         _ => return Err(e),
-            //     },
-            // } as char;
-            // if c == '\n' {
-            //     break;
-            // }
-
-            // line.push(c);
         }
 
         Ok(line)
@@ -218,21 +172,5 @@ where
 {
     let path: &Path = path.as_ref();
 
-    // let f = tokio::fs::File::open(path).await?.into_std().await;
-    // let dec = GzDecoder::new(std::io::BufReader::new(f));
-
-    // let f_read = BufReader::with_capacity(READER_BUF_SIZE, f);
-    // let dec = GzDecoder::new(f_read);
-
-    // let f_write = BufWriter::with_capacity(
-    //     WRITER_BUF_SIZE,
-    //     File::create(path.parent().unwrap().join("out/out.json.gz")).await?,
-    // );
-    // let enc = GzipEncoder::new(f_write);
-
-    // let mut s = String::new();
-    // dec.read_to_string(&mut s).await?;
-    // println!("Decoded:\n{}", s);
     Ok(JsonLinesReadStream::new(path).await)
-    // Ok((JsonLinesReadStream::new(dec), JsonLineWriteStream::new(enc)))
 }

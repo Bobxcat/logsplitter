@@ -197,10 +197,10 @@ pub struct Line {
     pub text: String,
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread", worker_threads = 20)]
 async fn main() -> anyhow::Result<()> {
-    let num_processing_tasks = 4usize;
-    let num_output_tasks = 2usize;
+    let num_processing_tasks = 13usize;
+    let num_output_tasks = 6usize;
 
     let (task_send, _task_recv) = channel(128);
 
@@ -236,6 +236,7 @@ async fn main() -> anyhow::Result<()> {
         output_line_handles.push(tokio::spawn(output_lines(r, o, f)));
     }
 
+    let mut num_lines_read = 0;
     //Continuously read lines until reaching the end of the file, then end the execution
     loop {
         //Get the next line
@@ -244,12 +245,15 @@ async fn main() -> anyhow::Result<()> {
             println!("Last line reached");
             break;
         }
+        num_lines_read += 1;
         //Add the line to the processing queue
         {
             let mut lock = process_line_queue.lock().await;
             lock.push_front(line);
         }
     }
+
+    println!("Number of lines read: {num_lines_read}");
 
     //Once execution has ended, wait for all queues to be finished
     //This is not a time-sensitive operation, so checking can occur relatively infrequently
