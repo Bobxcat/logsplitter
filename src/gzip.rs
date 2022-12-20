@@ -4,6 +4,7 @@ use std::{
     fs::File,
     hash::Hash,
     io::Write,
+    ops::Range,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -260,14 +261,14 @@ pub struct JsonLinesReadStream {
     ///
     /// Note that the next characters are only described by the slice `buf[buf_start_index..buf.len()]`
     buf: [u8; Self::BUFFER_SIZE],
-    /// The starting index of the valid bytes in `buf`
-    buf_start_index: usize,
+    /// The range of valid bytes in `buf`
+    buf_valid_range: Range<usize>,
     /// `true` if and only if the input stream's EOF has been reached
     finished: bool,
 }
 
 impl JsonLinesReadStream {
-    const BUFFER_SIZE: usize = 128;
+    const BUFFER_SIZE: usize = 64;
     pub async fn new<P>(path: P) -> Self
     where
         P: AsRef<Path>,
@@ -276,7 +277,7 @@ impl JsonLinesReadStream {
             input_stream: GzDecoderAsync::new(path).await,
             // buffer: VecDeque::with_capacity(Self::BUFFER_SIZE),
             buf: [0; Self::BUFFER_SIZE],
-            buf_start_index: Self::BUFFER_SIZE,
+            buf_valid_range: 0..0,
             finished: false,
         }
     }
@@ -287,14 +288,16 @@ impl JsonLinesReadStream {
             return Ok(String::new());
         }
 
-        let mut line = String::with_capacity(self.buf.len() - self.buf_start_index);
+        // Allocate the next line with the knowledge of the minimum number of bytes which will be pushed into it
+        // (that is, all the remaining buffered bytes)
+        let mut line = String::with_capacity(self.buf_valid_range.len());
 
         // //Before reading any new values, read from `self.buffer`
-        for i in self.buf_start_index..Self::BUFFER_SIZE {
+        for i in self.buf_valid_range.clone() {
             let c = self.buf[i] as char;
             if c == '\n' {
                 //Still need to update `buf_start_index` in case multiple lines were read into the same buffer
-                self.buf_start_index = i + 1;
+                self.buf_valid_range.start = i + 1;
                 return Ok(line);
             }
             line.push(c);
@@ -302,26 +305,28 @@ impl JsonLinesReadStream {
 
         'outer: loop {
             let chars_read = self.input_stream.read(&mut self.buf).await?;
-            //Generate a buffer which is the same as `buf` except that it only counts characters that were actually read
-            let buf = &self.buf[0..chars_read];
 
             //EOF is signified by `Ok(0)` and can happen after multiple reads in a loop
-            //So, make sure to still return the line
+            //So, make sure to still return the final line
             if chars_read == 0 {
                 println!("EOF reached");
+                // println!(
+                //     "Final buf: {:?}",
+                //     self.buf.iter().map(|n| *n as char).collect::<Vec<_>>()
+                // );
                 self.finished = true;
+                self.buf_valid_range = 0..0;
                 return Ok(line);
-                // return Ok(String::new());
             }
 
-            for (i, c) in buf.iter().enumerate() {
-                let c = *c as char;
+            for i in 0..chars_read {
+                let c = self.buf[i] as char;
                 if c == '\n' {
                     // //Write the rest of the characters to `self.buffer`
                     //Note the `+ 1` which exists so that the current character (a newline) is not read
 
                     // println!("Finished reading line: {line}");
-                    self.buf_start_index = i + 1;
+                    self.buf_valid_range = (i + 1)..(chars_read);
                     break 'outer;
                 }
                 line.push(c);
