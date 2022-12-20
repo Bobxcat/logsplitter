@@ -204,7 +204,7 @@ pub struct Line {
 //  most (the rest) of the threads should be running Gzip decompression/compression
 //  so, what this means is the
 
-async fn start() {
+async fn start() -> anyhow::Result<()> {
     let num_processing_tasks = 13usize;
     let num_output_tasks = 6usize;
 
@@ -289,6 +289,8 @@ async fn start() {
 
     // println!("Task shutdown complete. Flushing remaining bytes to output files");
     println!("Task shutdown complete. Exiting now");
+
+    Ok(())
 }
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 20)]
