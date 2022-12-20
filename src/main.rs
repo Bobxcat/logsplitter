@@ -348,7 +348,7 @@ async fn start() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[cfg(pprof)]
+#[cfg(feature = "pprof")]
 async fn main_pprof() -> anyhow::Result<()> {
     use pprof::protos::{self, Message};
     let pprof_guard = pprof::ProfilerGuardBuilder::default()
@@ -422,12 +422,14 @@ async fn main_default() -> anyhow::Result<()> {
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
-    #[cfg(pprof)]
+    #[cfg(feature = "pprof")]
     {
+        println!("Running with pprof enabled");
         main_pprof().await?;
     }
 
-    if !cfg!(pprof) {
+    if !cfg!(feature = "pprof") {
+        println!("Running with pprof disabled");
         main_default().await?;
     }
 
