@@ -2,3 +2,5 @@
 /example_sets/out
 /example_sets/testdata.json.gz
 *.json
+*.svg
+*.pb

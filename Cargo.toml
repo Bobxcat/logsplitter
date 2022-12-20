@@ -3,11 +3,13 @@ name = "dads_gzip_thing"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+pprof = ["dep:pprof"]
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [profile.release]
 debug = 1
-
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -38,5 +40,5 @@ pprof = { version = "0.11", features = [
     "default",
     "protobuf",
     "protobuf-codec",
-] }
+], optional = true }
 protobuf = "3.2"

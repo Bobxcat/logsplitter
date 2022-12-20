@@ -10,7 +10,6 @@ use bytes::Bytes;
 use chrono::{DateTime, FixedOffset, TimeZone};
 
 use gzip::JsonLinesWriteStreamPool;
-use pprof::protos::{self, Message};
 use serde::{Deserialize, Deserializer, Serialize};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -349,66 +348,88 @@ async fn start() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 20)]
-async fn main() -> anyhow::Result<()> {
+#[cfg(pprof)]
+async fn main_pprof() -> anyhow::Result<()> {
+    use pprof::protos::{self, Message};
+    let pprof_guard = pprof::ProfilerGuardBuilder::default()
+        .frequency(1000)
+        .blocklist(&["libc", "libgcc", "pthread", "vdso"])
+        .build()
+        .unwrap();
+
+    main_default().await?;
+
+    // Do pprof things
+    match pprof_guard.report().build() {
+        Ok(report) => {
+            println!("Generating and writing a flamegraph from pprof data");
+            {
+                let file = std::fs::File::create("flamegraph.svg").unwrap();
+
+                let mut options = pprof::flamegraph::Options::default();
+                options.image_width = Some(2500);
+                report.flamegraph_with_options(file, &mut options).unwrap();
+            }
+            println!("Generating and writing pprof data to file");
+            {
+                let mut file = std::fs::File::create("profile.pb").unwrap();
+                // pprof::protos::profile::Profile::new();
+                let profile = report.pprof().unwrap();
+
+                let mut content = Vec::new();
+
+                profile.write_to_vec(&mut content)?;
+                file.write_all(&content)?;
+
+                // println!("report: {}", &report);
+            }
+        }
+        Err(e) => println!("pprof error encountered: {e}"),
+    }
+
+    Ok(())
+}
+
+async fn main_default() -> anyhow::Result<()> {
+    const DISPLAY_TIMINGS: bool = true;
     //Clear the `out` directory since JsonLineWriteStream appends to existing files
     {
         let path = "example_sets/out";
         std::fs::remove_dir_all(path)?;
         std::fs::create_dir(path)?;
     }
-    // let pprof_guard = pprof::ProfilerGuardBuilder::default()
-    //     .frequency(1000)
-    //     .blocklist(&["libc", "libgcc", "pthread", "vdso"])
-    //     .build()
-    //     .unwrap();
 
     let start_time = SystemTime::now();
 
     start().await?;
 
     let run_duration = SystemTime::now().duration_since(start_time)?;
-    println!("=====");
-    println!(
-        "Time taken to run program: {:.2}s",
-        run_duration.as_secs_f64()
-    );
-    println!(
-        //Print time as ms as well
-        "    Time as milliseconds:  {:}ms",
-        run_duration.as_millis()
-    );
+    if DISPLAY_TIMINGS {
+        println!("=====");
+        println!(
+            "Time taken to run program: {:.2}s",
+            run_duration.as_secs_f64()
+        );
+        println!(
+            //Print time in ms as well
+            "    Time as milliseconds:  {:}ms",
+            run_duration.as_millis()
+        );
+    }
 
-    // {
-    //     // Do pprof things
-    //     if let Ok(report) = pprof_guard.report().build() {
-    //         println!("Generating and writing a flamegraph from pprof data");
-    //         {
-    //             let file = std::fs::File::create("flamegraph.svg").unwrap();
+    Ok(())
+}
 
-    //             let mut options = pprof::flamegraph::Options::default();
-    //             options.image_width = Some(2500);
-    //             report.flamegraph_with_options(file, &mut options).unwrap();
-    //         }
-    //         println!("Generating and writing pprof data to file");
-    //         {
-    //             let mut file = std::fs::File::create("profile.pb").unwrap();
-    //             // pprof::protos::profile::Profile::new();
-    //             let profile = report.pprof().unwrap();
+#[tokio::main(flavor = "multi_thread")]
+async fn main() -> anyhow::Result<()> {
+    #[cfg(pprof)]
+    {
+        main_pprof().await?;
+    }
 
-    //             let mut content = Vec::new();
-
-    //             profile.write_to_vec(&mut content)?;
-    //             file.write_all(&content)?;
-
-    //             // let mut content = Vec::new();
-    //             // profile.encode(&mut content).unwrap();
-    //             // file.write_all(&content).unwrap();
-
-    //             // println!("report: {}", &report);
-    //         }
-    //     };
-    // }
+    if !cfg!(pprof) {
+        main_default().await?;
+    }
 
     Ok(())
 }
