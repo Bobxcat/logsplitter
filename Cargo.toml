@@ -26,3 +26,6 @@ flate2 = "1.0"
 pin-project = "1"
 anyhow = "1"
 async-compression = { version = "0.3", features = ["tokio", "gzip"] }
+bimap = "0.6"
+rand = "0.8"
+tokio-scoped = "0.2"

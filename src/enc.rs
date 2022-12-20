@@ -11,7 +11,7 @@ use bytes::Bytes;
 use flate2::{read::GzEncoder, Compression};
 // use flate2::write::GzEncoder;
 use tokio::{
-    fs::File,
+    fs::{File, OpenOptions},
     io::{AsyncWrite, AsyncWriteExt},
     runtime::Handle,
     sync::{mpsc, Mutex},
@@ -63,11 +63,12 @@ impl GzEncoderAsync {
     where
         P: AsRef<Path>,
     {
-        let f = File::create(path).await.unwrap();
-
-        // let queue_in = GzEncQueue {
-        //     queue: Arc::new(Mutex::new(VecDeque::new())),
-        // };
+        let f = OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(path)
+            .await
+            .unwrap();
 
         let enc = GzEncoder::new(VecDeque::new(), Compression::new(compression_level));
         Self {
