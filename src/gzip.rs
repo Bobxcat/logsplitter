@@ -338,59 +338,6 @@ impl JsonLinesReadStream {
         }
         Ok(line)
     }
-    // /// Gets the next JSON line (which contains a whole object)
-    // pub async fn next_line(&mut self) -> Result<String, tokio::io::Error> {
-    //     let mut line = String::new();
-    //     let buf = &mut [0; Self::BUFFER_SIZE][..];
-
-    //     // //Before reading any new values, read from `self.buffer`
-    //     // for c in self.buf[self.buf_start_index..self.buf.len()].iter() {
-    //     //     let c = *c as char;
-    //     //     if c == '\n' {
-    //     //         return Ok(line);
-    //     //     }
-    //     //     line.push(c);
-    //     // }
-    //     while let Some(c) = self.buffer.pop_back() {
-    //         if c == '\n' {
-    //             return Ok(line);
-    //         }
-    //         line.push(c);
-    //     }
-
-    //     'outer: loop {
-    //         let chars_read = self.input_stream.read(buf).await?;
-    //         //Generate a buffer which is the same as `buf` except that it only counts characters that were actually read
-    //         let buf = &buf[0..chars_read];
-
-    //         //EOF is signified by `Ok(0)`
-    //         if chars_read == 0 {
-    //             println!("EOF reached");
-    //             return Ok(String::new());
-    //         }
-
-    //         for (i, c) in buf.iter().enumerate() {
-    //             let c = *c as char;
-    //             if c == '\n' {
-    //                 // //Write the rest of the characters to `self.buffer`
-    //                 // //Note the `+ 1` which exists so that the current character (a newline) is not read
-    //                 for c in buf[i + 1..chars_read].iter() {
-    //                     let c = *c as char;
-    //                     self.buffer.push_front(c);
-    //                 }
-    //                 // println!("Finished reading line: {line}");
-    //                 // self.buf_start_index = i + 1;
-    //                 break 'outer;
-    //             }
-    //             line.push(c);
-    //         }
-    //     }
-
-    //     if false {
-    //         println!("line: {line}\n");
-    //     }
-    //     Ok(line)
-    // }
 }
 
 /// The size of the file reader's buffer. Currently 1 MiB

@@ -124,10 +124,10 @@ async fn process_lines(
     process_line_queue: Arc<Mutex<VecDeque<String>>>,
     output_line_queue: Arc<Mutex<VecDeque<Line>>>,
 ) -> tokio::io::Result<()> {
-    // const LOCAL_QUEUE_SIZE: usize = 10;
+    const LOCAL_QUEUE_SIZE: usize = 5;
 
-    // let mut local_process_queue = VecDeque::with_capacity(LOCAL_QUEUE_SIZE);
-    // let mut local_output_queue = VecDeque::with_capacity(LOCAL_QUEUE_SIZE);
+    let mut local_process_queue = VecDeque::with_capacity(LOCAL_QUEUE_SIZE);
+    let mut local_output_queue = VecDeque::with_capacity(LOCAL_QUEUE_SIZE);
     loop {
         //Handle messages from main thread
         match recv.try_recv() {
@@ -148,52 +148,52 @@ async fn process_lines(
         //Grab the queue
         let mut process_line_queue = process_line_queue.lock().await;
 
-        if let Some(line_raw) = process_line_queue.pop_back() {
-            //Drop each lock ASAP (before heavy computation)
-
-            drop(process_line_queue);
-
-            //Get the key for each line
-            let key = get_key(&line_raw);
-            let line = Line {
-                target_file: output_key_to_path(key),
-                text: line_raw,
-            };
-
-            //Queue the line
-            let mut output_line_queue = output_line_queue.lock().await;
-            output_line_queue.push_front(line);
-        }
-
-        // //Populate `local_process_queue`
-        // for _ in 0..LOCAL_QUEUE_SIZE {
-        //     if let Some(line) = process_line_queue.pop_back() {
-        //         local_process_queue.push_front(line);
-        //     } else {
-        //         break;
-        //     }
-        // }
-
-        // //Drop the global queue handle
-        // drop(process_line_queue);
-
-        // if let Some(line) = local_process_queue.pop_back() {
+        // if let Some(line_raw) = process_line_queue.pop_back() {
         //     //Drop each lock ASAP (before heavy computation)
 
+        //     drop(process_line_queue);
+
         //     //Get the key for each line
-        //     let key = get_key(&line);
+        //     let key = get_key(&line_raw);
         //     let line = Line {
         //         target_file: output_key_to_path(key),
-        //         text: line,
+        //         text: line_raw,
         //     };
-        //     local_output_queue.push_front(line);
-        // }
 
-        // //Queue the line
-        // let mut output_line_queue = output_line_queue.lock().await;
-        // while let Some(line) = local_output_queue.pop_back() {
+        //     //Queue the line
+        //     let mut output_line_queue = output_line_queue.lock().await;
         //     output_line_queue.push_front(line);
         // }
+
+        //Populate `local_process_queue`
+        for _ in 0..LOCAL_QUEUE_SIZE {
+            if let Some(line) = process_line_queue.pop_back() {
+                local_process_queue.push_front(line);
+            } else {
+                break;
+            }
+        }
+
+        //Drop the global queue handle
+        drop(process_line_queue);
+
+        if let Some(line) = local_process_queue.pop_back() {
+            //Drop each lock ASAP (before heavy computation)
+
+            //Get the key for each line
+            let key = get_key(&line);
+            let line = Line {
+                target_file: output_key_to_path(key),
+                text: line,
+            };
+            local_output_queue.push_front(line);
+        }
+
+        //Queue the line
+        let mut output_line_queue = output_line_queue.lock().await;
+        while let Some(line) = local_output_queue.pop_back() {
+            output_line_queue.push_front(line);
+        }
     }
 
     Ok(())
@@ -247,8 +247,8 @@ pub struct Line {
 //  so, what this means is the
 
 async fn start() -> anyhow::Result<()> {
-    let num_processing_tasks = 13usize;
-    let num_output_tasks = 6usize;
+    let num_processing_tasks = 10usize;
+    let num_output_tasks = 9usize;
 
     let (task_send, _task_recv) = channel(128);
 
@@ -285,19 +285,33 @@ async fn start() -> anyhow::Result<()> {
     }
 
     let mut num_lines_read = 0;
+    const LOCAL_READ_QUEUE_LEN: usize = 10;
+    let mut local_read_queue = VecDeque::with_capacity(LOCAL_READ_QUEUE_LEN);
     //Continuously read lines until reaching the end of the file, then end the execution
     loop {
+        macro_rules! flush {
+            () => {
+                //Lock the global queue
+                let mut global_queue = process_line_queue.lock().await;
+                while let Some(line) = local_read_queue.pop_back() {
+                    global_queue.push_front(line);
+                }
+            };
+        }
         //Get the next line
         let line = line_stream.next_line().await?;
         if line.is_empty() {
+            //Flush all queued up lines to the global queue before exiting
+            flush!();
             println!("Last line reached");
             break;
         }
         num_lines_read += 1;
-        //Add the line to the processing queue
-        {
-            let mut lock = process_line_queue.lock().await;
-            lock.push_front(line);
+        local_read_queue.push_front(line);
+        //Add the line to the local queue
+        //Push the local queue to the global queue if line_read_queue.len() >= LINE_READ_QUEUE_LEN
+        if local_read_queue.len() >= LOCAL_READ_QUEUE_LEN {
+            flush!();
         }
     }
 
@@ -337,6 +351,12 @@ async fn start() -> anyhow::Result<()> {
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 20)]
 async fn main() -> anyhow::Result<()> {
+    //Clear the `out` directory since JsonLineWriteStream appends to existing files
+    {
+        let path = "example_sets/out";
+        std::fs::remove_dir_all(path)?;
+        std::fs::create_dir(path)?;
+    }
     // let pprof_guard = pprof::ProfilerGuardBuilder::default()
     //     .frequency(1000)
     //     .blocklist(&["libc", "libgcc", "pthread", "vdso"])
@@ -359,34 +379,36 @@ async fn main() -> anyhow::Result<()> {
         run_duration.as_millis()
     );
 
-    // // Do pprof things
-    // if let Ok(report) = pprof_guard.report().build() {
-    //     println!("Generating and writing a flamegraph from pprof data");
-    //     {
-    //         let file = std::fs::File::create("flamegraph.svg").unwrap();
+    // {
+    //     // Do pprof things
+    //     if let Ok(report) = pprof_guard.report().build() {
+    //         println!("Generating and writing a flamegraph from pprof data");
+    //         {
+    //             let file = std::fs::File::create("flamegraph.svg").unwrap();
 
-    //         let mut options = pprof::flamegraph::Options::default();
-    //         options.image_width = Some(2500);
-    //         report.flamegraph_with_options(file, &mut options).unwrap();
-    //     }
-    //     println!("Generating and writing pprof data to file");
-    //     {
-    //         let mut file = std::fs::File::create("profile.pb").unwrap();
-    //         // pprof::protos::profile::Profile::new();
-    //         let profile = report.pprof().unwrap();
+    //             let mut options = pprof::flamegraph::Options::default();
+    //             options.image_width = Some(2500);
+    //             report.flamegraph_with_options(file, &mut options).unwrap();
+    //         }
+    //         println!("Generating and writing pprof data to file");
+    //         {
+    //             let mut file = std::fs::File::create("profile.pb").unwrap();
+    //             // pprof::protos::profile::Profile::new();
+    //             let profile = report.pprof().unwrap();
 
-    //         let mut content = Vec::new();
+    //             let mut content = Vec::new();
 
-    //         profile.write_to_vec(&mut content)?;
-    //         file.write_all(&content)?;
+    //             profile.write_to_vec(&mut content)?;
+    //             file.write_all(&content)?;
 
-    //         // let mut content = Vec::new();
-    //         // profile.encode(&mut content).unwrap();
-    //         // file.write_all(&content).unwrap();
+    //             // let mut content = Vec::new();
+    //             // profile.encode(&mut content).unwrap();
+    //             // file.write_all(&content).unwrap();
 
-    //         // println!("report: {}", &report);
-    //     }
-    // };
+    //             // println!("report: {}", &report);
+    //         }
+    //     };
+    // }
 
     Ok(())
 }
