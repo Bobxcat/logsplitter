@@ -5,6 +5,10 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[profile.release]
+debug = 1
+
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -29,3 +33,10 @@ async-compression = { version = "0.3", features = ["tokio", "gzip"] }
 bimap = "0.6"
 rand = "0.8"
 tokio-scoped = "0.2"
+pprof = { version = "0.11", features = [
+    "flamegraph",
+    "default",
+    "protobuf",
+    "protobuf-codec",
+] }
+protobuf = "3.2"

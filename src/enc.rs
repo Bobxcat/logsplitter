@@ -84,6 +84,9 @@ impl GzEncoderAsync {
         self.enc.read_to_end(&mut buf).unwrap();
         //Write the file contents asyncrounously
         self.f.write_all(&buf).await.unwrap();
+        // let queue_in = GzEncQueue {
+        //     queue: Arc::new(Mutex::new(VecDeque::new())),
+        // };
 
         //Reset values, keeping the same file open
         self.bytes_queued = 0;

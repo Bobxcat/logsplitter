@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, VecDeque},
-    io::{BufRead, Cursor},
+    io::{BufRead, Cursor, Write},
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
@@ -10,6 +10,7 @@ use bytes::Bytes;
 use chrono::{DateTime, FixedOffset, TimeZone};
 
 use gzip::JsonLinesWriteStreamPool;
+use pprof::protos::{self, Message};
 use serde::{Deserialize, Deserializer, Serialize};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -205,6 +206,12 @@ pub struct Line {
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 20)]
 async fn main() -> anyhow::Result<()> {
+    let pprof_guard = pprof::ProfilerGuardBuilder::default()
+        .frequency(1000)
+        .blocklist(&["libc", "libgcc", "pthread", "vdso"])
+        .build()
+        .unwrap();
+
     let num_processing_tasks = 13usize;
     let num_output_tasks = 6usize;
 
@@ -289,6 +296,34 @@ async fn main() -> anyhow::Result<()> {
 
     // println!("Task shutdown complete. Flushing remaining bytes to output files");
     println!("Task shutdown complete. Exiting now");
+
+    if let Ok(report) = pprof_guard.report().build() {
+        println!("Generating and writing a flamegraph from pprof data");
+        {
+            let file = std::fs::File::create("flamegraph.svg").unwrap();
+
+            let mut options = pprof::flamegraph::Options::default();
+            options.image_width = Some(2500);
+            report.flamegraph_with_options(file, &mut options).unwrap();
+        }
+        println!("Generating and writing pprof data to file");
+        {
+            let mut file = std::fs::File::create("profile.pb").unwrap();
+            // pprof::protos::profile::Profile::new();
+            let profile = report.pprof().unwrap();
+
+            let mut content = Vec::new();
+
+            profile.write_to_vec(&mut content)?;
+            file.write_all(&content)?;
+
+            // let mut content = Vec::new();
+            // profile.encode(&mut content).unwrap();
+            // file.write_all(&content).unwrap();
+
+            // println!("report: {}", &report);
+        }
+    };
 
     Ok(())
 }
