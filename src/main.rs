@@ -424,6 +424,7 @@ async fn main_default() -> anyhow::Result<()> {
 async fn main() -> anyhow::Result<()> {
     #[cfg(feature = "pprof")]
     {
+        //go tool pprof -http=:8080 profile.pb
         println!("Running with pprof enabled");
         main_pprof().await?;
     }
