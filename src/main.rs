@@ -3,7 +3,7 @@ use std::{
     io::{BufRead, Cursor, Write},
     path::{Path, PathBuf},
     sync::Arc,
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 
 use bytes::Bytes;
@@ -204,14 +204,7 @@ pub struct Line {
 //  most (the rest) of the threads should be running Gzip decompression/compression
 //  so, what this means is the
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 20)]
-async fn main() -> anyhow::Result<()> {
-    let pprof_guard = pprof::ProfilerGuardBuilder::default()
-        .frequency(1000)
-        .blocklist(&["libc", "libgcc", "pthread", "vdso"])
-        .build()
-        .unwrap();
-
+async fn start() {
     let num_processing_tasks = 13usize;
     let num_output_tasks = 6usize;
 
@@ -296,7 +289,25 @@ async fn main() -> anyhow::Result<()> {
 
     // println!("Task shutdown complete. Flushing remaining bytes to output files");
     println!("Task shutdown complete. Exiting now");
+}
 
+#[tokio::main(flavor = "multi_thread", worker_threads = 20)]
+async fn main() -> anyhow::Result<()> {
+    let pprof_guard = pprof::ProfilerGuardBuilder::default()
+        .frequency(1000)
+        .blocklist(&["libc", "libgcc", "pthread", "vdso"])
+        .build()
+        .unwrap();
+
+    let start_time = SystemTime::now();
+
+    start().await;
+
+    let run_duration = SystemTime::now().duration_since(start_time)?;
+    println!("=====");
+    println!("Time taken to run program: {}s", run_duration.as_secs_f64());
+
+    // Do pprof things
     if let Ok(report) = pprof_guard.report().build() {
         println!("Generating and writing a flamegraph from pprof data");
         {
