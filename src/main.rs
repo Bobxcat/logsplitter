@@ -18,7 +18,7 @@ use tokio::{
         broadcast::{channel, Receiver},
         Mutex,
     },
-    time,
+    time::{self, sleep_until},
 };
 
 use serde::de::Visitor;
@@ -122,6 +122,10 @@ async fn process_lines(
     process_line_queue: Arc<Mutex<VecDeque<String>>>,
     output_line_queue: Arc<Mutex<VecDeque<Line>>>,
 ) -> tokio::io::Result<()> {
+    // const LOCAL_QUEUE_SIZE: usize = 10;
+
+    // let mut local_process_queue = VecDeque::with_capacity(LOCAL_QUEUE_SIZE);
+    // let mut local_output_queue = VecDeque::with_capacity(LOCAL_QUEUE_SIZE);
     loop {
         //Handle messages from main thread
         match recv.try_recv() {
@@ -138,23 +142,56 @@ async fn process_lines(
         }
 
         //Process each line
+
+        //Grab the queue
         let mut process_line_queue = process_line_queue.lock().await;
 
-        if let Some(line) = process_line_queue.pop_back() {
+        if let Some(line_raw) = process_line_queue.pop_back() {
             //Drop each lock ASAP (before heavy computation)
+
             drop(process_line_queue);
 
             //Get the key for each line
-            let key = get_key(&line);
+            let key = get_key(&line_raw);
             let line = Line {
                 target_file: output_key_to_path(key),
-                text: line,
+                text: line_raw,
             };
 
             //Queue the line
             let mut output_line_queue = output_line_queue.lock().await;
             output_line_queue.push_front(line);
         }
+
+        // //Populate `local_process_queue`
+        // for _ in 0..LOCAL_QUEUE_SIZE {
+        //     if let Some(line) = process_line_queue.pop_back() {
+        //         local_process_queue.push_front(line);
+        //     } else {
+        //         break;
+        //     }
+        // }
+
+        // //Drop the global queue handle
+        // drop(process_line_queue);
+
+        // if let Some(line) = local_process_queue.pop_back() {
+        //     //Drop each lock ASAP (before heavy computation)
+
+        //     //Get the key for each line
+        //     let key = get_key(&line);
+        //     let line = Line {
+        //         target_file: output_key_to_path(key),
+        //         text: line,
+        //     };
+        //     local_output_queue.push_front(line);
+        // }
+
+        // //Queue the line
+        // let mut output_line_queue = output_line_queue.lock().await;
+        // while let Some(line) = local_output_queue.pop_back() {
+        //     output_line_queue.push_front(line);
+        // }
     }
 
     Ok(())
@@ -184,6 +221,9 @@ async fn output_lines(
             let mut s = output_file_streams.lock().await;
 
             s.write_line(line).await;
+        } else {
+            //Wait for the queue to be filled again
+            // tokio::time::sleep(Duration::from_millis(1)).await;
         }
     }
 
@@ -295,48 +335,55 @@ async fn start() -> anyhow::Result<()> {
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 20)]
 async fn main() -> anyhow::Result<()> {
-    let pprof_guard = pprof::ProfilerGuardBuilder::default()
-        .frequency(1000)
-        .blocklist(&["libc", "libgcc", "pthread", "vdso"])
-        .build()
-        .unwrap();
+    // let pprof_guard = pprof::ProfilerGuardBuilder::default()
+    //     .frequency(1000)
+    //     .blocklist(&["libc", "libgcc", "pthread", "vdso"])
+    //     .build()
+    //     .unwrap();
 
     let start_time = SystemTime::now();
 
-    start().await;
+    start().await?;
 
     let run_duration = SystemTime::now().duration_since(start_time)?;
     println!("=====");
-    println!("Time taken to run program: {}s", run_duration.as_secs_f64());
+    println!(
+        "Time taken to run program: {:.2}s",
+        run_duration.as_secs_f64()
+    );
+    println!(
+        "    Time as minutes:       {:.2}min",
+        run_duration.as_secs_f64() / 60.0
+    );
 
-    // Do pprof things
-    if let Ok(report) = pprof_guard.report().build() {
-        println!("Generating and writing a flamegraph from pprof data");
-        {
-            let file = std::fs::File::create("flamegraph.svg").unwrap();
+    // // Do pprof things
+    // if let Ok(report) = pprof_guard.report().build() {
+    //     println!("Generating and writing a flamegraph from pprof data");
+    //     {
+    //         let file = std::fs::File::create("flamegraph.svg").unwrap();
 
-            let mut options = pprof::flamegraph::Options::default();
-            options.image_width = Some(2500);
-            report.flamegraph_with_options(file, &mut options).unwrap();
-        }
-        println!("Generating and writing pprof data to file");
-        {
-            let mut file = std::fs::File::create("profile.pb").unwrap();
-            // pprof::protos::profile::Profile::new();
-            let profile = report.pprof().unwrap();
+    //         let mut options = pprof::flamegraph::Options::default();
+    //         options.image_width = Some(2500);
+    //         report.flamegraph_with_options(file, &mut options).unwrap();
+    //     }
+    //     println!("Generating and writing pprof data to file");
+    //     {
+    //         let mut file = std::fs::File::create("profile.pb").unwrap();
+    //         // pprof::protos::profile::Profile::new();
+    //         let profile = report.pprof().unwrap();
 
-            let mut content = Vec::new();
+    //         let mut content = Vec::new();
 
-            profile.write_to_vec(&mut content)?;
-            file.write_all(&content)?;
+    //         profile.write_to_vec(&mut content)?;
+    //         file.write_all(&content)?;
 
-            // let mut content = Vec::new();
-            // profile.encode(&mut content).unwrap();
-            // file.write_all(&content).unwrap();
+    //         // let mut content = Vec::new();
+    //         // profile.encode(&mut content).unwrap();
+    //         // file.write_all(&content).unwrap();
 
-            // println!("report: {}", &report);
-        }
-    };
+    //         // println!("report: {}", &report);
+    //     }
+    // };
 
     Ok(())
 }

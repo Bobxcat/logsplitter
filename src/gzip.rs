@@ -267,7 +267,17 @@ impl JsonLinesReadStream {
     /// Gets the next JSON line (which contains a whole object)
     pub async fn next_line(&mut self) -> Result<String, tokio::io::Error> {
         let mut line = String::new();
-        loop {
+        let buf = &mut [0; 32][..];
+        'outer: loop {
+            // let chars_read = self.input_stream.read(buf).await?;
+            // for c in buf[0..chars_read].iter() {
+            //     let c = *c as char;
+            //     if c == '\n' {
+            //         // println!("Finished reading line: {line}");
+            //         break 'outer;
+            //     }
+            //     line.push(c);
+            // }
             let c = match self.input_stream.read_u8().await {
                 Ok(c) => c,
                 Err(e) => match e.kind() {
