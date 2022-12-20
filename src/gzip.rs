@@ -253,50 +253,139 @@ impl JsonLinesWriteStream {
 #[derive(Debug)]
 pub struct JsonLinesReadStream {
     input_stream: GzDecoderAsync,
+    // buffer: VecDeque<char>,
+    /// The buffer of chars used in `next_line` for when a newline is found partway through a reading.
+    ///
+    /// In essence, stores some of the first values of the next line which has yet to be read
+    ///
+    /// Note that the next characters are only described by the slice `buf[buf_start_index..buf.len()]`
+    buf: [u8; Self::BUFFER_SIZE],
+    /// The starting index of the valid bytes in `buf`
+    buf_start_index: usize,
+    /// `true` if and only if the input stream's EOF has been reached
+    finished: bool,
 }
 
 impl JsonLinesReadStream {
+    const BUFFER_SIZE: usize = 128;
     pub async fn new<P>(path: P) -> Self
     where
         P: AsRef<Path>,
     {
         Self {
             input_stream: GzDecoderAsync::new(path).await,
+            // buffer: VecDeque::with_capacity(Self::BUFFER_SIZE),
+            buf: [0; Self::BUFFER_SIZE],
+            buf_start_index: Self::BUFFER_SIZE,
+            finished: false,
         }
     }
+
     /// Gets the next JSON line (which contains a whole object)
     pub async fn next_line(&mut self) -> Result<String, tokio::io::Error> {
-        let mut line = String::new();
-        let buf = &mut [0; 32][..];
-        'outer: loop {
-            // let chars_read = self.input_stream.read(buf).await?;
-            // for c in buf[0..chars_read].iter() {
-            //     let c = *c as char;
-            //     if c == '\n' {
-            //         // println!("Finished reading line: {line}");
-            //         break 'outer;
-            //     }
-            //     line.push(c);
-            // }
-            let c = match self.input_stream.read_u8().await {
-                Ok(c) => c,
-                Err(e) => match e.kind() {
-                    std::io::ErrorKind::UnexpectedEof => {
-                        println!("EOF reached");
-                        return Ok(String::new());
-                    }
-                    _ => return Err(e),
-                },
-            } as char;
-            if c == '\n' {
-                break;
-            }
+        if self.finished {
+            return Ok(String::new());
+        }
 
+        let mut line = String::with_capacity(self.buf.len() - self.buf_start_index);
+
+        // //Before reading any new values, read from `self.buffer`
+        for i in self.buf_start_index..Self::BUFFER_SIZE {
+            let c = self.buf[i] as char;
+            if c == '\n' {
+                //Still need to update `buf_start_index` in case multiple lines were read into the same buffer
+                self.buf_start_index = i + 1;
+                return Ok(line);
+            }
             line.push(c);
         }
 
+        'outer: loop {
+            let chars_read = self.input_stream.read(&mut self.buf).await?;
+            //Generate a buffer which is the same as `buf` except that it only counts characters that were actually read
+            let buf = &self.buf[0..chars_read];
+
+            //EOF is signified by `Ok(0)` and can happen after multiple reads in a loop
+            //So, make sure to still return the line
+            if chars_read == 0 {
+                println!("EOF reached");
+                self.finished = true;
+                return Ok(line);
+                // return Ok(String::new());
+            }
+
+            for (i, c) in buf.iter().enumerate() {
+                let c = *c as char;
+                if c == '\n' {
+                    // //Write the rest of the characters to `self.buffer`
+                    //Note the `+ 1` which exists so that the current character (a newline) is not read
+
+                    // println!("Finished reading line: {line}");
+                    self.buf_start_index = i + 1;
+                    break 'outer;
+                }
+                line.push(c);
+            }
+        }
+
+        if false {
+            println!("line: {line}\n");
+        }
         Ok(line)
     }
+    // /// Gets the next JSON line (which contains a whole object)
+    // pub async fn next_line(&mut self) -> Result<String, tokio::io::Error> {
+    //     let mut line = String::new();
+    //     let buf = &mut [0; Self::BUFFER_SIZE][..];
+
+    //     // //Before reading any new values, read from `self.buffer`
+    //     // for c in self.buf[self.buf_start_index..self.buf.len()].iter() {
+    //     //     let c = *c as char;
+    //     //     if c == '\n' {
+    //     //         return Ok(line);
+    //     //     }
+    //     //     line.push(c);
+    //     // }
+    //     while let Some(c) = self.buffer.pop_back() {
+    //         if c == '\n' {
+    //             return Ok(line);
+    //         }
+    //         line.push(c);
+    //     }
+
+    //     'outer: loop {
+    //         let chars_read = self.input_stream.read(buf).await?;
+    //         //Generate a buffer which is the same as `buf` except that it only counts characters that were actually read
+    //         let buf = &buf[0..chars_read];
+
+    //         //EOF is signified by `Ok(0)`
+    //         if chars_read == 0 {
+    //             println!("EOF reached");
+    //             return Ok(String::new());
+    //         }
+
+    //         for (i, c) in buf.iter().enumerate() {
+    //             let c = *c as char;
+    //             if c == '\n' {
+    //                 // //Write the rest of the characters to `self.buffer`
+    //                 // //Note the `+ 1` which exists so that the current character (a newline) is not read
+    //                 for c in buf[i + 1..chars_read].iter() {
+    //                     let c = *c as char;
+    //                     self.buffer.push_front(c);
+    //                 }
+    //                 // println!("Finished reading line: {line}");
+    //                 // self.buf_start_index = i + 1;
+    //                 break 'outer;
+    //             }
+    //             line.push(c);
+    //         }
+    //     }
+
+    //     if false {
+    //         println!("line: {line}\n");
+    //     }
+    //     Ok(line)
+    // }
 }
 
 /// The size of the file reader's buffer. Currently 1 MiB

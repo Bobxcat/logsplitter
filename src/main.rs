@@ -45,7 +45,9 @@ where
 }
 
 pub fn get_key(line: &str) -> String {
-    let info: LineInfo = serde_json::de::from_str(line).unwrap();
+    let info: LineInfo = serde_json::de::from_str(line)
+        .unwrap_or_else(|e| panic!("Error encountered on line:\n    {e}\n    {line}"));
+    // let info: LineInfo = serde_json::de::from_str(line).unwrap();
 
     let key = format!(
         "{}_{}_{}",
@@ -352,8 +354,9 @@ async fn main() -> anyhow::Result<()> {
         run_duration.as_secs_f64()
     );
     println!(
-        "    Time as minutes:       {:.2}min",
-        run_duration.as_secs_f64() / 60.0
+        //Print time as ms as well
+        "    Time as milliseconds:  {:}ms",
+        run_duration.as_millis()
     );
 
     // // Do pprof things
