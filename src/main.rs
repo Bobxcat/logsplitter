@@ -286,22 +286,36 @@ async fn start() -> anyhow::Result<()> {
     let mut num_lines_read = 0;
     const LOCAL_READ_QUEUE_LEN: usize = 10;
     let mut local_read_queue = VecDeque::with_capacity(LOCAL_READ_QUEUE_LEN);
+    let mut local_read_queue_flush_handle = None;
     //Continuously read lines until reaching the end of the file, then end the execution
     loop {
         macro_rules! flush {
             () => {
-                //Lock the global queue
-                let mut global_queue = process_line_queue.lock().await;
-                while let Some(line) = local_read_queue.pop_back() {
-                    global_queue.push_front(line);
+                if let Some(h) = local_read_queue_flush_handle {
+                    h.await?;
                 }
+                let process_line_queue = process_line_queue.clone();
+                //Lock the global queue
+                local_read_queue_flush_handle = Some(tokio::spawn(async move {
+                    let mut global_queue = process_line_queue.lock().await;
+                    while let Some(line) = local_read_queue.pop_back() {
+                        global_queue.push_front(line);
+                    }
+                }));
+                local_read_queue = VecDeque::with_capacity(LOCAL_READ_QUEUE_LEN);
             };
         }
         //Get the next line
         let line = line_stream.next_line().await?;
         if line.is_empty() {
             //Flush all queued up lines to the global queue before exiting
-            flush!();
+            #[allow(unused_assignments)]
+            {
+                flush!();
+                if let Some(q) = local_read_queue_flush_handle {
+                    q.await?;
+                }
+            }
             println!("Last line reached");
             break;
         }
