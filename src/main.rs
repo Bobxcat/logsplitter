@@ -123,7 +123,7 @@ async fn process_lines(
     process_line_queue: Arc<Mutex<VecDeque<String>>>,
     output_line_queue: Arc<Mutex<VecDeque<Line>>>,
 ) -> tokio::io::Result<()> {
-    const LOCAL_QUEUE_SIZE: usize = 5;
+    const LOCAL_QUEUE_SIZE: usize = 128;
 
     //Signifies whether the main task has issued a shutdown. Note that a shutdown occurs
     // only if the global queue is empty
@@ -263,6 +263,7 @@ async fn start() -> anyhow::Result<()> {
     let num_processing_tasks = 10usize;
     let num_output_tasks = 9usize;
 
+    // Create the broadcast channel used to send shutdown messages and such
     let (task_send, _task_recv) = channel(128);
 
     let mut line_stream = open_file("example_sets/testdata.json.gz").await?;
@@ -389,6 +390,9 @@ async fn start() -> anyhow::Result<()> {
     Ok(())
 }
 
+// A good way to visualize:
+// `go tool pprof -ignore threadpool -http=:8080 profile.pb`
+
 #[cfg(feature = "pprof")]
 async fn main_pprof() -> anyhow::Result<()> {
     use pprof::protos::{self, Message};
@@ -455,7 +459,7 @@ async fn main_default() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[tokio::main(flavor = "multi_thread")]
+#[tokio::main(flavor = "multi_thread", worker_threads = 20)]
 async fn main() -> anyhow::Result<()> {
     //Clear the `out` directory since JsonLineWriteStream appends to existing files
     //Make sure that is' been completed by the time that each main function is called
