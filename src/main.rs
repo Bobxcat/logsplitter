@@ -183,7 +183,8 @@ async fn process_lines(
         //Drop the global queue handle
         drop(process_line_queue);
 
-        if let Some(line) = local_process_queue.pop_back() {
+        //Process all the lines
+        while let Some(line) = local_process_queue.pop_back() {
             //Drop each lock ASAP (before heavy computation)
 
             //Get the key for each line
