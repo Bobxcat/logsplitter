@@ -268,7 +268,7 @@ pub struct JsonLinesReadStream {
 }
 
 impl JsonLinesReadStream {
-    const BUFFER_SIZE: usize = 2048 * 2;
+    const BUFFER_SIZE: usize = 1024 * 4;
     pub async fn new<P>(path: P) -> Self
     where
         P: AsRef<Path>,

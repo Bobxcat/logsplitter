@@ -125,13 +125,17 @@ async fn process_lines(
 ) -> tokio::io::Result<()> {
     const LOCAL_QUEUE_SIZE: usize = 5;
 
+    //Signifies whether the main task has issued a shutdown. Note that a shutdown occurs
+    // only if the global queue is empty
+    let mut shutdown_queued = false;
+
     let mut local_process_queue = VecDeque::with_capacity(LOCAL_QUEUE_SIZE);
     let mut local_output_queue = VecDeque::with_capacity(LOCAL_QUEUE_SIZE);
-    loop {
+    'outer: loop {
         //Handle messages from main thread
         match recv.try_recv() {
             Ok(val) => match val {
-                TaskBroadcastMessage::Shutdown => break,
+                TaskBroadcastMessage::Shutdown => shutdown_queued = true,
             },
             Err(e) => match e {
                 tokio::sync::broadcast::error::TryRecvError::Closed => {
@@ -169,6 +173,9 @@ async fn process_lines(
             if let Some(line) = process_line_queue.pop_back() {
                 local_process_queue.push_front(line);
             } else {
+                if shutdown_queued {
+                    break 'outer;
+                }
                 break;
             }
         }
@@ -203,11 +210,14 @@ async fn output_lines(
     output_line_queue: Arc<Mutex<VecDeque<Line>>>,
     output_file_streams: Arc<Mutex<JsonLinesWriteStreamPool>>,
 ) -> tokio::io::Result<()> {
+    //Signifies whether the main task has issued a shutdown. Note that a shutdown occurs
+    // only if the global queue is empty
+    let mut shutdown_queued = false;
     loop {
         //Handle messages from main thread
         match recv.try_recv() {
             Ok(val) => match val {
-                TaskBroadcastMessage::Shutdown => break,
+                TaskBroadcastMessage::Shutdown => shutdown_queued = true,
             },
             Err(e) => match e {
                 tokio::sync::broadcast::error::TryRecvError::Closed => {
@@ -223,6 +233,9 @@ async fn output_lines(
 
             s.write_line(line).await;
         } else {
+            if shutdown_queued {
+                break;
+            }
             //Wait for the queue to be filled again
             // tokio::time::sleep(Duration::from_millis(1)).await;
         }
@@ -284,7 +297,7 @@ async fn start() -> anyhow::Result<()> {
     }
 
     let mut num_lines_read = 0;
-    const LOCAL_READ_QUEUE_LEN: usize = 10;
+    const LOCAL_READ_QUEUE_LEN: usize = 100;
     let mut local_read_queue = VecDeque::with_capacity(LOCAL_READ_QUEUE_LEN);
     let mut local_read_queue_flush_handle = None;
     //Continuously read lines until reaching the end of the file, then end the execution
@@ -295,14 +308,22 @@ async fn start() -> anyhow::Result<()> {
                     h.await?;
                 }
                 let process_line_queue = process_line_queue.clone();
-                //Lock the global queue
                 local_read_queue_flush_handle = Some(tokio::spawn(async move {
+                    //Lock the global queue
                     let mut global_queue = process_line_queue.lock().await;
+                    //Push the local queue to the global one
                     while let Some(line) = local_read_queue.pop_back() {
                         global_queue.push_front(line);
                     }
                 }));
                 local_read_queue = VecDeque::with_capacity(LOCAL_READ_QUEUE_LEN);
+
+                // //Lock the global queue
+                // let mut global_queue = process_line_queue.lock().await;
+                // //Push the local queue to the global one
+                // while let Some(line) = local_read_queue.pop_back() {
+                //     global_queue.push_front(line);
+                // }
             };
         }
         //Get the next line
@@ -352,6 +373,7 @@ async fn start() -> anyhow::Result<()> {
     //After queues are finished, notify all tasks that shutdown has been initiated and join them back
     task_send.send(TaskBroadcastMessage::Shutdown)?;
 
+    println!("Shutting down all tasks");
     //Join all tasks
     for task in process_line_handles
         .into_iter()
