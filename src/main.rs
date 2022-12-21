@@ -307,6 +307,8 @@ async fn start() -> anyhow::Result<()> {
         }
         //Get the next line
         let line = line_stream.next_line().await?;
+
+        //If the line is empty, EOF has been reached
         if line.is_empty() {
             //Flush all queued up lines to the global queue before exiting
             #[allow(unused_assignments)]
@@ -319,6 +321,8 @@ async fn start() -> anyhow::Result<()> {
             println!("Last line reached");
             break;
         }
+
+        //Update the number of lines read and the queue
         num_lines_read += 1;
         local_read_queue.push_front(line);
         //Add the line to the local queue
@@ -406,12 +410,6 @@ async fn main_pprof() -> anyhow::Result<()> {
 
 async fn main_default() -> anyhow::Result<()> {
     const DISPLAY_TIMINGS: bool = true;
-    //Clear the `out` directory since JsonLineWriteStream appends to existing files
-    {
-        let path = "example_sets/out";
-        std::fs::remove_dir_all(path)?;
-        std::fs::create_dir(path)?;
-    }
 
     let start_time = SystemTime::now();
 
@@ -436,6 +434,13 @@ async fn main_default() -> anyhow::Result<()> {
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
+    //Clear the `out` directory since JsonLineWriteStream appends to existing files
+    //Make sure that is' been completed by the time that each main function is called
+    {
+        let path = "example_sets/out";
+        tokio::fs::remove_dir_all(path).await?;
+        tokio::fs::create_dir(path).await?;
+    }
     #[cfg(feature = "pprof")]
     {
         //go tool pprof -http=:8080 profile.pb
