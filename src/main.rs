@@ -196,7 +196,7 @@ async fn process_lines(
             local_output_queue.push_front(line);
         }
 
-        //Queue the line
+        //Queue all the finished lines
         let mut output_line_queue = output_line_queue.lock().await;
         while let Some(line) = local_output_queue.pop_back() {
             output_line_queue.push_front(line);
