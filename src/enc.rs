@@ -50,7 +50,7 @@ use tokio::{
 pub struct GzEncoderAsync {
     enc: GzEncoder<VecDeque<u8>>,
     /// The number of bytes queued for writing to the file output. Resets upon calling `flush` along with
-    /// and resetting `enc` to a new decoder
+    /// resetting `enc` to a new decoder
     bytes_queued: usize,
     compression_level: u32,
     f: File,

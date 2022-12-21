@@ -9,6 +9,7 @@ use std::{
 use bytes::Bytes;
 use chrono::{DateTime, FixedOffset, TimeZone};
 
+use futures::stream::FuturesUnordered;
 use gzip::JsonLinesWriteStreamPool;
 use serde::{Deserialize, Deserializer, Serialize};
 use tokio::{
@@ -211,10 +212,16 @@ async fn output_lines(
     output_line_queue: Arc<Mutex<VecDeque<Line>>>,
     output_file_streams: Arc<Mutex<JsonLinesWriteStreamPool>>,
 ) -> tokio::io::Result<()> {
+    const LOCAL_QUEUE_SIZE: usize = 128;
+
+    //Note:
+    // - Order of lines does *not* matter
+
     //Signifies whether the main task has issued a shutdown. Note that a shutdown occurs
     // only if the global queue is empty
     let mut shutdown_queued = false;
-    loop {
+    let mut local_line_queue = VecDeque::new();
+    'outer: loop {
         //Handle messages from main thread
         match recv.try_recv() {
             Ok(val) => match val {
@@ -229,17 +236,43 @@ async fn output_lines(
             },
         }
         let mut queue = output_line_queue.lock().await;
-        if let Some(line) = queue.pop_back() {
-            let mut s = output_file_streams.lock().await;
 
-            s.write_line(line).await;
-        } else {
-            if shutdown_queued {
+        //Populate `local_line_queue`
+        for _ in 0..LOCAL_QUEUE_SIZE {
+            if let Some(line) = queue.pop_back() {
+                local_line_queue.push_front(line);
+            } else {
+                if shutdown_queued {
+                    break 'outer;
+                }
                 break;
             }
-            //Wait for the queue to be filled again
-            // tokio::time::sleep(Duration::from_millis(1)).await;
         }
+
+        drop(queue);
+
+        //Flush the local queue
+
+        let mut s = output_file_streams.lock().await;
+        while let Some(line) = local_line_queue.pop_back() {
+            //Flush to the output
+
+            s.write_line(line).await;
+        }
+
+        // if let Some(line) = queue.pop_back() {
+        //     //Flush to the output
+
+        //     let mut s = output_file_streams.lock().await;
+
+        //     s.write_line(line).await;
+        // } else {
+        //     if shutdown_queued {
+        //         break;
+        //     }
+        //     //Wait for the queue to be filled again
+        //     // tokio::time::sleep(Duration::from_millis(1)).await;
+        // }
     }
 
     Ok(())
