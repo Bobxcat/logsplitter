@@ -1,33 +1,17 @@
 use std::{
-    collections::{hash_map::DefaultHasher, HashMap, VecDeque},
+    collections::{HashMap, VecDeque},
     fmt::Debug,
-    fs::File,
-    hash::Hash,
-    io::Write,
     ops::Range,
     path::{Path, PathBuf},
-    sync::Arc,
 };
 
 use bimap::BiMap;
 // use async_compression::tokio::bufread::{GzipDecoder, GzipEncoder};
-use bytes::{Bytes, BytesMut};
-use flate2::{bufread::GzDecoder, write::GzEncoder, Compression};
-use futures::{future::join_all, sink::Buffer, stream::FuturesUnordered, FutureExt};
-use serde::{Deserialize, Serialize};
+use bytes::Bytes;
 use tokio::{
-    fs::ReadDir,
-    io::{AsyncBufRead, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader, BufStream, BufWriter},
-    runtime::Handle,
-    sync::{
-        mpsc::{channel, unbounded_channel, Receiver, Sender, UnboundedSender},
-        Mutex,
-    },
-    task::{block_in_place, spawn_blocking, JoinSet},
+    io::{AsyncRead, AsyncReadExt},
+    sync::mpsc::Receiver,
 };
-use tokio_scoped::scoped;
-use tokio_stream::{wrappers::UnboundedReceiverStream, StreamExt};
-use tokio_util::io::StreamReader;
 
 use crate::{dec::GzDecoderAsync, enc::GzEncoderAsync, Line};
 // use tokio_stream::wrappers::ReceiverStream;

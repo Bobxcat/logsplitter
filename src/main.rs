@@ -1,24 +1,20 @@
 use std::{
-    collections::{HashMap, VecDeque},
-    io::{BufRead, Cursor, Write},
+    collections::VecDeque,
     path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, SystemTime},
 };
 
-use bytes::Bytes;
-use chrono::{DateTime, FixedOffset, TimeZone};
+use chrono::{DateTime, FixedOffset};
 
-use futures::stream::FuturesUnordered;
 use gzip::JsonLinesWriteStreamPool;
 use serde::{Deserialize, Deserializer, Serialize};
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
     sync::{
         broadcast::{channel, Receiver},
         Mutex,
     },
-    time::{self, sleep_until},
+    time,
 };
 
 use serde::de::Visitor;
@@ -299,8 +295,8 @@ async fn start() -> anyhow::Result<()> {
     // Create the broadcast channel used to send shutdown messages and such
     let (task_send, _task_recv) = channel(128);
 
-    let mut line_stream = open_file("example_sets/testdata.json.gz").await?;
-    // let mut line_stream = open_file("example_sets/input1.json.gz").await?;
+    // let mut line_stream = open_file("example_sets/testdata.json.gz").await?;
+    let mut line_stream = open_file("example_sets/input1.json.gz").await?;
 
     // The queue of lines to be processed by `process_lines` tasks
     let process_line_queue: Arc<Mutex<VecDeque<String>>> = Arc::new(Mutex::new(VecDeque::new()));
@@ -497,7 +493,7 @@ async fn main() -> anyhow::Result<()> {
     //Clear the `out` directory since JsonLineWriteStream appends to existing files
     //Make sure that is' been completed by the time that each main function is called
     {
-        let path = "example_sets/out";
+        let path = "./example_sets/out";
         tokio::fs::remove_dir_all(path).await?;
         tokio::fs::create_dir(path).await?;
     }
